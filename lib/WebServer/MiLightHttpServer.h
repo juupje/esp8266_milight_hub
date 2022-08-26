@@ -6,6 +6,7 @@
 #include <RadioSwitchboard.h>
 #include <PacketSender.h>
 #include <TransitionController.h>
+#include <AlarmController.h>
 
 #ifndef _MILIGHT_HTTP_SERVER
 #define _MILIGHT_HTTP_SERVER
@@ -29,7 +30,8 @@ public:
     GroupStateStore*& stateStore,
     PacketSender*& packetSender,
     RadioSwitchboard*& radios,
-    TransitionController& transitions
+    TransitionController& transitions,
+    AlarmController*& alarms
   )
     : authProvider(settings)
     , server(80, authProvider)
@@ -41,6 +43,7 @@ public:
     , packetSender(packetSender)
     , radios(radios)
     , transitions(transitions)
+    , alarms(alarms)
   { }
 
   void begin();
@@ -87,6 +90,16 @@ protected:
   void handleCreateTransition(RequestContext& request);
   void handleListTransitions(RequestContext& request);
 
+  void handleGetAlarm(RequestContext& request);
+  void handleDeleteAlarm(RequestContext& request);
+  void handleCreateAlarm(RequestContext& request);
+  void handleListAlarms(RequestContext& request);
+  void handleStopAlarm(RequestContext& request);
+  void handleSnoozeAlarm(RequestContext& request);
+  
+  void handleGetTime(RequestContext& request);
+  void handleSetTime(RequestContext& request);
+
   void handleRequest(const JsonObject& request);
   void handleWsEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length);
 
@@ -105,6 +118,7 @@ protected:
   PacketSender*& packetSender;
   RadioSwitchboard*& radios;
   TransitionController& transitions;
+  AlarmController*& alarms;
 
 };
 

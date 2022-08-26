@@ -491,7 +491,7 @@ void MiLightClient::handleTransition(GroupStateField field, JsonVariant value, f
     uint16_t currentValue;
     uint16_t endValue = value;
 
-    if (startValue == FETCH_VALUE_FROM_STATE || currentState->isOn()) {
+    if (startValue == FETCH_VALUE_FROM_STATE/* || currentState->isOn()*/) {
       currentValue = currentState->getParsedFieldValue(field);
     } else {
       currentValue = startValue;

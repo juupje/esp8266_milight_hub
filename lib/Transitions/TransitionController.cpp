@@ -13,7 +13,7 @@ using namespace std::placeholders;
 
 TransitionController::TransitionController()
   : callback(std::bind(&TransitionController::transitionCallback, this, _1, _2, _3))
-  , currentId(0)
+  , currentId(2) //Don't start at 0
   , defaultPeriod(500)
 { }
 

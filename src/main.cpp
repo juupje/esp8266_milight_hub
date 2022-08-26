@@ -27,9 +27,17 @@
 #include <PacketSender.h>
 #include <HomeAssistantDiscoveryClient.h>
 #include <TransitionController.h>
-
+#include <NTPHandler.h>
+#include <AlarmController.h>
+#include <time.h>
 #include <vector>
 #include <memory>
+
+// for the RTC unit
+#define CLK_PIN 5
+#define DAT_PIN 4
+#define RST_PIN 0
+#define NTP_PORT 2390
 
 WiFiManager wifiManager;
 // because of callbacks, these need to be in the higher scope :(
@@ -50,6 +58,9 @@ MqttClient* mqttClient = NULL;
 MiLightDiscoveryServer* discoveryServer = NULL;
 uint8_t currentRadioType = 0;
 
+//Alarms
+AlarmController* alarmController;
+
 // For tracking and managing group state
 GroupStateStore* stateStore = NULL;
 BulbStateUpdater* bulbStateUpdater = NULL;
@@ -59,6 +70,7 @@ int numUdpServers = 0;
 std::vector<std::shared_ptr<MiLightUdpServer>> udpServers;
 WiFiUDP udpSeder;
 
+NTPHandler* ntpHandler;
 /**
  * Set up UDP servers (both v5 and v6).  Clean up old ones if necessary.
  */
@@ -329,6 +341,8 @@ void onGroupDeleted(const BulbId& id) {
   }
 }
 
+
+
 void setup() {
   Serial.begin(9600);
   String ssid = "ESP" + String(ESP.getChipId());
@@ -404,9 +418,9 @@ void setup() {
   } else {
     // set LED mode for Wifi failed
     ledStatus->continuous(settings.ledModeWifiFailed);
-    Serial.println(F("Wifi failed.  Restarting in 10 seconds.\n"));
+    Serial.println(F("Wifi failed.  Restarting in 60 seconds.\n"));
 
-    delay(10000);
+    delay(60000);
     ESP.restart();
   }
 
@@ -421,11 +435,23 @@ void setup() {
   SSDP.setDeviceType("upnp:rootdevice");
   SSDP.begin();
 
-  httpServer = new MiLightHttpServer(settings, milightClient, stateStore, packetSender, radios, transitions);
+  while(WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  ntpHandler = new NTPHandler(NTP_PORT);
+  alarmController = new AlarmController(DAT_PIN, CLK_PIN, RST_PIN, settings, milightClient, ntpHandler, transitions);
+  alarmController->begin();
+ 
+  httpServer = new MiLightHttpServer(settings, milightClient, stateStore, packetSender, radios, transitions, alarmController);
   httpServer->onSettingsSaved(applySettings);
   httpServer->onGroupDeleted(onGroupDeleted);
   httpServer->on("/description.xml", HTTP_GET, []() { SSDP.schema(httpServer->client()); });
   httpServer->begin();
+
+  
+
 
   transitions.addListener(
     [](const BulbId& bulbId, GroupStateField field, uint16_t value) {
@@ -433,7 +459,6 @@ void setup() {
 
       const char* fieldName = GroupStateFieldHelpers::getFieldName(field);
       buffer[fieldName] = value;
-
       milightClient->prepare(bulbId.deviceType, bulbId.deviceId, bulbId.groupId);
       milightClient->update(buffer.as<JsonObject>());
     }
@@ -463,6 +488,7 @@ void loop() {
   stateStore->limitedFlush();
   packetSender->loop();
 
+  alarmController->loop();
   // update LED with status
   ledStatus->handle();
 
@@ -473,5 +499,4 @@ void loop() {
     ESP.restart();
   }
 }
-
 #endif
