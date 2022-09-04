@@ -49,17 +49,22 @@ class AlarmController {
         ListNode<Alarmptr>* getAlarms();
         void loop();
         String getFormattedTime();
-        unsigned long getTime();
+        unsigned long getTime(); //in Epoch time (since 1970)
+        unsigned long getMillisTime(); //in Epoch2000 time (since 2000, using millis())
+        unsigned long getMillisTimeEpoch(); //in Epoch time (since 1970, using millis())
         bool stop();
         bool snooze(JsonObject& response);
 
     private:
-        bool setTime(unsigned long time);
+        bool setRTCTime(unsigned long time);
+        unsigned long updateTimeFromRTC();
+        unsigned long millisStart;
+        unsigned long offset; // in seconds
+
         AlarmList alarmList;
         size_t atomicID;
         ThreeWire wire;
         RtcDS1302<ThreeWire> rtc;
-        RtcDateTime time;
         Settings& settings;
         MiLightClient*& milightClient;
         NTPHandler*& ntpHandler;

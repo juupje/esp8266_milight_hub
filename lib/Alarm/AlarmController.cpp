@@ -24,23 +24,24 @@ bool AlarmController::begin() {
         rtc.SetIsRunning(true);
     }
     unsigned long now = ntpHandler->requestTime();
-    setTime(now);
+    setRTCTime(now);
+    //updateTimeFromRTC(); called by setRTCTime
     alarmList.listAlarms();
     return true;
 }
 
 void AlarmController::loop() {
     if(activeAlarm) {
-        if(activeAlarm->getAlarmTime()+activeAlarm->getDuration()<rtc.GetDateTime().TotalSeconds()) {
+        if(activeAlarm->getAlarmTime()+activeAlarm->getDuration()<getMillisTime()) {
             Serial.println("Alarm is done!");
             activeAlarm = nullptr;
             transitionID = 0;
         }
     }
     if(alarmList.size()>0) {
-        time = rtc.GetDateTime();
-        if(alarmList.first()->getAlarmTime() <= time.TotalSeconds()) {
+        if(alarmList.first()->getAlarmTime() <= getMillisTime()) {
             char buffer[20];
+            RtcDateTime time = rtc.GetDateTime();
             snprintf_P(buffer,20,PSTR("%04u/%02u/%02u %02u:%02u:%02u"),
                     time.Year(), time.Month(), time.Day(), time.Hour(), time.Minute(), time.Second());
             Serial.print("Triggering alarm at time ");
@@ -204,7 +205,24 @@ unsigned long AlarmController::getTime() {
 
 bool AlarmController::refreshTime() {
     unsigned long now = ntpHandler->requestTime();
-    return setTime(now);
+    return setRTCTime(now);
+}
+
+unsigned long AlarmController::getMillisTimeEpoch() {
+    return getMillisTime()+c_Epoch32OfOriginYear;
+}
+
+unsigned long AlarmController::getMillisTime() {
+    unsigned long delta = (millis()-millisStart)/1000;
+    if(delta>3600)//one hour
+        return updateTimeFromRTC();
+    return delta+offset;
+}
+
+unsigned long AlarmController::updateTimeFromRTC() {
+    offset = rtc.GetDateTime().TotalSeconds();
+    millisStart = millis();
+    return offset;
 }
 
 bool AlarmController::snooze(JsonObject& response) {
@@ -232,7 +250,7 @@ bool AlarmController::stop() {
 }
 
 // Epoch 1970 UTC time 
-bool AlarmController::setTime(unsigned long time) {
+bool AlarmController::setRTCTime(unsigned long time) {
     if(rtc.GetIsWriteProtected()) {
         Serial.println("Disabling RTC write protection.");
         rtc.SetIsWriteProtected(false);
@@ -257,6 +275,7 @@ bool AlarmController::setTime(unsigned long time) {
         Serial.println("Enabling RTC write protection.");
         rtc.SetIsWriteProtected(true);
     }
+    updateTimeFromRTC();
     return true;
 }
 

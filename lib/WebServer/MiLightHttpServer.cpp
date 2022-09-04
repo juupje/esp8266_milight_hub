@@ -779,6 +779,7 @@ void MiLightHttpServer::handleSnoozeAlarm(RequestContext& request) {
 void MiLightHttpServer::handleGetTime(RequestContext& request) {
   request.response.json[F("time")] = alarms->getFormattedTime();
   request.response.json[F("utc_time")] = alarms->getTime();
+  request.response.json[F("utc_time_millis")] = alarms->getMillisTimeEpoch();
   request.response.setCode(200);
   request.response.json[F("success")] = true;
 }
@@ -786,10 +787,13 @@ void MiLightHttpServer::handleGetTime(RequestContext& request) {
 void MiLightHttpServer::handleSetTime(RequestContext& request) {
   request.response.setCode(200);
   if(alarms->refreshTime()) {
-    request.response.json[F("success")] = true;
     request.response.json[F("time")] = alarms->getFormattedTime();
     request.response.json[F("utc_time")] = alarms->getTime();
+    request.response.json[F("utc_time_millis")] = alarms->getMillisTimeEpoch();
+    request.response.json[F("success")] = true;
   } else {
+    request.response.json[F("success")] = false;
+    request.response.setCode(500);
     request.response.json[F("error")] = "Could not update time";
   }
 }
