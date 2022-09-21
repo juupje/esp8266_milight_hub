@@ -192,7 +192,7 @@ void LEDStatus::_modeToTime(LEDStatus::LEDMode mode, uint16_t& ledOffMs, uint16_
       ledOnMs = 100;
       break;
     case LEDMode::SlowBlip:
-      ledOffMs = 1500;
+      ledOffMs = 5000;
       ledOnMs = 50;
       break;
     case LEDMode::FastBlip:

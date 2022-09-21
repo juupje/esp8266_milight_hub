@@ -64,6 +64,27 @@ void MiLightHttpServer::begin() {
     .on(HTTP_POST, std::bind(&MiLightHttpServer::handleCreateTransition, this, _1));
 
   server
+    .buildHandler("/alarms")
+    .on(HTTP_GET, std::bind(&MiLightHttpServer::handleListAlarms, this, _1))
+    .on(HTTP_POST, std::bind(&MiLightHttpServer::handleCreateAlarm, this, _1));
+
+  server
+    .buildHandler("/alarms/time")
+    .on(HTTP_GET, std::bind(&MiLightHttpServer::handleGetTime, this, _1))
+    .on(HTTP_PUT, std::bind(&MiLightHttpServer::handleSetTime, this, _1));
+  server
+    .buildHandler("/alarms/stop")
+    .on(HTTP_ANY, std::bind(&MiLightHttpServer::handleStopAlarm, this, _1));
+
+  server
+    .buildHandler("/alarms/snooze")
+    .on(HTTP_ANY, std::bind(&MiLightHttpServer::handleSnoozeAlarm, this, _1));
+  server
+    .buildHandler("/alarms/:id")
+    .on(HTTP_GET, std::bind(&MiLightHttpServer::handleGetAlarm, this, _1))
+    .on(HTTP_DELETE, std::bind(&MiLightHttpServer::handleDeleteAlarm, this, _1));
+
+  server
     .buildHandler("/raw_commands/:type")
     .on(HTTP_ANY, std::bind(&MiLightHttpServer::handleSendRaw, this, _1));
 
@@ -674,5 +695,105 @@ void MiLightHttpServer::handleCreateTransition(RequestContext& request) {
     request.response.json[F("success")] = true;
   } else {
     request.response.setCode(400);
+  }
+}
+
+void MiLightHttpServer::handleGetAlarm(RequestContext& request) {
+  size_t id = atoi(request.pathVariables.get("id"));
+  auto alarm = alarms->getAlarm(id);
+
+  if (alarm == nullptr) {
+    request.response.setCode(404);
+    request.response.json["error"] = "Not found";
+  } else {
+    JsonObject response = request.response.json.to<JsonObject>();
+    alarm->serialize(response);
+  }
+}
+
+void MiLightHttpServer::handleDeleteAlarm(RequestContext& request) {
+  size_t id = atoi(request.pathVariables.get("id"));
+  bool success = alarms->deleteAlarm(id);
+
+  if (success) {
+    request.response.json["success"] = true;
+  } else {
+    request.response.setCode(404);
+    request.response.json["error"] = "Not found";
+  }
+}
+
+void MiLightHttpServer::handleListAlarms(RequestContext& request) {
+  auto current = alarms->getAlarms();
+  JsonArray alarms = request.response.json.to<JsonObject>().createNestedArray(F("alarms"));
+
+  while (current != nullptr) {
+    JsonObject json = alarms.createNestedObject();
+    current->data->serialize(json);
+    current = current->next;
+  }
+}
+
+void MiLightHttpServer::handleCreateAlarm(RequestContext& request) {
+  JsonObject body = request.getJsonBody().as<JsonObject>();
+  
+  if(body.containsKey(F("alias"))) {
+    std::map<String, BulbId>::iterator it = settings.groupIdAliases.find(body["alias"]);
+    if(it == settings.groupIdAliases.end()) {
+        request.response.setCode(400);
+        request.response.json[F("error")] = "Alias not found";
+        return;
+    }
+    BulbId& bulbId = it->second;
+    if (alarms->createAlarm(bulbId, request.getJsonBody().as<JsonObject>(), request.response.json)) {
+      request.response.json[F("success")] = true;
+    } else {
+      request.response.setCode(400);
+    }
+  } else {
+    request.response.setCode(400);
+    request.response.json[F("error")] = "Must specify required key: alias";
+    return;
+  }
+}
+
+void MiLightHttpServer::handleStopAlarm(RequestContext& request) {
+  if(alarms->stop()) {
+    request.response.json[F("success")] = true;
+  } else {
+    request.response.json[F("success")] = false;
+    request.response.json[F("error")] = "No active alarm.";
+  }
+}
+
+void MiLightHttpServer::handleSnoozeAlarm(RequestContext& request) {
+  JsonObject response = request.response.json.to<JsonObject>();
+  if(alarms->snooze(response)) {
+    return;
+  } else {
+    request.response.json[F("success")] = false;
+    request.response.setCode(500);
+  }
+}
+
+void MiLightHttpServer::handleGetTime(RequestContext& request) {
+  request.response.json[F("time")] = alarms->getFormattedTime();
+  request.response.json[F("utc_time")] = alarms->getTime();
+  request.response.json[F("utc_time_millis")] = alarms->getMillisTimeEpoch();
+  request.response.setCode(200);
+  request.response.json[F("success")] = true;
+}
+
+void MiLightHttpServer::handleSetTime(RequestContext& request) {
+  request.response.setCode(200);
+  if(alarms->refreshTime()) {
+    request.response.json[F("time")] = alarms->getFormattedTime();
+    request.response.json[F("utc_time")] = alarms->getTime();
+    request.response.json[F("utc_time_millis")] = alarms->getMillisTimeEpoch();
+    request.response.json[F("success")] = true;
+  } else {
+    request.response.json[F("success")] = false;
+    request.response.setCode(500);
+    request.response.json[F("error")] = "Could not update time";
   }
 }
