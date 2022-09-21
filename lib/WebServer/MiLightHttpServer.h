@@ -97,6 +97,9 @@ protected:
   void handleStopAlarm(RequestContext& request);
   void handleSnoozeAlarm(RequestContext& request);
   
+  void handleGetPresets(RequestContext& request);
+  void handlePutPresets(RequestContext& request);
+
   void handleGetTime(RequestContext& request);
   void handleSetTime(RequestContext& request);
 
