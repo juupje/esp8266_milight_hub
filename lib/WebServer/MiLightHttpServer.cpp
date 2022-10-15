@@ -535,6 +535,7 @@ void MiLightHttpServer::handleUpdateGroup(RequestContext& request) {
 }
 
 void MiLightHttpServer::handleRequest(const JsonObject& request) {
+  alarms->stopAutoTurnOff();
   milightClient->setRepeatsOverride(
     settings.httpRepeatFactor * settings.packetRepeats
   );
@@ -543,6 +544,7 @@ void MiLightHttpServer::handleRequest(const JsonObject& request) {
 }
 
 void MiLightHttpServer::handleSendRaw(RequestContext& request) {
+  alarms->stopAutoTurnOff();
   JsonObject requestBody = request.getJsonBody().as<JsonObject>();
   const MiLightRemoteConfig* config = MiLightRemoteConfig::fromType(request.pathVariables.get("type"));
 
@@ -622,6 +624,8 @@ void MiLightHttpServer::handleServe_P(const char* data, size_t length) {
 }
 
 void MiLightHttpServer::handleGetTransition(RequestContext& request) {
+  alarms->stopAutoTurnOff();
+
   size_t id = atoi(request.pathVariables.get("id"));
   auto transition = transitions.getTransition(id);
 
@@ -635,6 +639,8 @@ void MiLightHttpServer::handleGetTransition(RequestContext& request) {
 }
 
 void MiLightHttpServer::handleDeleteTransition(RequestContext& request) {
+  alarms->stopAutoTurnOff();
+
   size_t id = atoi(request.pathVariables.get("id"));
   bool success = transitions.deleteTransition(id);
 
@@ -647,6 +653,8 @@ void MiLightHttpServer::handleDeleteTransition(RequestContext& request) {
 }
 
 void MiLightHttpServer::handleListTransitions(RequestContext& request) {
+  alarms->stopAutoTurnOff();
+
   auto current = transitions.getTransitions();
   JsonArray transitions = request.response.json.to<JsonObject>().createNestedArray(F("transitions"));
 
@@ -658,6 +666,7 @@ void MiLightHttpServer::handleListTransitions(RequestContext& request) {
 }
 
 void MiLightHttpServer::handleCreateTransition(RequestContext& request) {
+  alarms->stopAutoTurnOff();
   JsonObject body = request.getJsonBody().as<JsonObject>();
 
   if (! body.containsKey(GroupStateFieldNames::DEVICE_ID)
@@ -699,6 +708,8 @@ void MiLightHttpServer::handleCreateTransition(RequestContext& request) {
 }
 
 void MiLightHttpServer::handleGetAlarm(RequestContext& request) {
+  alarms->stopAutoTurnOff();
+
   size_t id = atoi(request.pathVariables.get("id"));
   auto alarm = alarms->getAlarm(id);
 
@@ -707,11 +718,13 @@ void MiLightHttpServer::handleGetAlarm(RequestContext& request) {
     request.response.json["error"] = "Not found";
   } else {
     JsonObject response = request.response.json.to<JsonObject>();
-    alarm->serialize(response);
+    alarm->serialize(response, true);
   }
 }
 
 void MiLightHttpServer::handleDeleteAlarm(RequestContext& request) {
+  alarms->stopAutoTurnOff();
+
   size_t id = atoi(request.pathVariables.get("id"));
   bool success = alarms->deleteAlarm(id);
 
@@ -724,17 +737,21 @@ void MiLightHttpServer::handleDeleteAlarm(RequestContext& request) {
 }
 
 void MiLightHttpServer::handleListAlarms(RequestContext& request) {
+  alarms->stopAutoTurnOff();
+
   auto current = alarms->getAlarms();
   JsonArray alarms = request.response.json.to<JsonObject>().createNestedArray(F("alarms"));
 
   while (current != nullptr) {
     JsonObject json = alarms.createNestedObject();
-    current->data->serialize(json);
+    current->data->serialize(json, true);
     current = current->next;
   }
 }
 
 void MiLightHttpServer::handleCreateAlarm(RequestContext& request) {
+  alarms->stopAutoTurnOff();
+
   JsonObject body = request.getJsonBody().as<JsonObject>();
   
   if(body.containsKey(F("alias"))) {
@@ -777,6 +794,8 @@ void MiLightHttpServer::handleSnoozeAlarm(RequestContext& request) {
 }
 
 void MiLightHttpServer::handleGetTime(RequestContext& request) {
+  alarms->stopAutoTurnOff();
+
   request.response.json[F("time")] = alarms->getFormattedTime();
   request.response.json[F("utc_time")] = alarms->getTime();
   request.response.json[F("utc_time_millis")] = alarms->getMillisTimeEpoch();
@@ -785,8 +804,10 @@ void MiLightHttpServer::handleGetTime(RequestContext& request) {
 }
 
 void MiLightHttpServer::handleSetTime(RequestContext& request) {
-  request.response.setCode(200);
+  alarms->stopAutoTurnOff();
+
   if(alarms->refreshTime()) {
+    request.response.setCode(200);
     request.response.json[F("time")] = alarms->getFormattedTime();
     request.response.json[F("utc_time")] = alarms->getTime();
     request.response.json[F("utc_time_millis")] = alarms->getMillisTimeEpoch();

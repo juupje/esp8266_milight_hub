@@ -80,7 +80,7 @@ std::shared_ptr<Alarm> Alarm::snooze(uint32_t newID, unsigned long currentTime, 
         JsonObject obj = doc.to<JsonObject>();
         obj[GroupStateFieldHelpers::getFieldName(field)] = startValue;
         milightClient->update(obj);
-        return std::make_shared<Alarm>(newID, name, currentTime+SNOOZE_TIME, 0, duration, bulbId,
+        return std::make_shared<Alarm>(newID, name, currentTime+SNOOZE_TIME, 0, duration, 0, bulbId, //don't pass over the autoturnoff!
             field, startValue, endValue, initDoc, snoozes+1);
     } else {
         response[F("error")] = F("You already snoozed three times!");
@@ -90,16 +90,27 @@ std::shared_ptr<Alarm> Alarm::snooze(uint32_t newID, unsigned long currentTime, 
 
 std::shared_ptr<Alarm> Alarm::repeat() {
     if(repeatTime>0)
-        return std::make_shared<Alarm>(id, name, utc_time2000+repeatTime, repeatTime, duration, bulbId,
+        return std::make_shared<Alarm>(id, name, utc_time2000+repeatTime, repeatTime, duration, autoTurnOff,  bulbId,
             field, startValue, endValue, initDoc);
     return nullptr;
 }
 
-void Alarm::serialize(JsonObject& json) {
+void Alarm::serialize(JsonObject& json, bool pretty) {
     json[F("id")] = id;
-    json[F("next_time")] = TimeFormatter::formatTimeEpoch2000(utc_time2000);
-    json[F("repeat")] = TimeFormatter::formatTimeHMS(repeatTime);
+    json[F("name")] = name;
+    if(pretty) {
+        json[F("next_time")] = TimeFormatter::formatTimeEpoch2000(utc_time2000);
+        json[F("repeat")] = TimeFormatter::formatTimeHMS(repeatTime);
+    } else {
+        json[F("next_time_utc2000")] = utc_time2000;
+        json[F("repeat")] = repeatTime;     
+    }
     json[F("duration")] = duration;
+    json[F("auto_turn_off")] = autoTurnOff;
+    json[F("start_value")] = startValue;
+    json[F("end_value")] = endValue;
+    json[F("field")] = GroupStateFieldHelpers::getFieldName(field);
+    json[F("init")] = initDoc.to<JsonObject>();
     JsonObject bulbParams = json.createNestedObject("bulb");
     bulbId.serialize(bulbParams);
 }

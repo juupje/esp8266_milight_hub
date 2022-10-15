@@ -13,13 +13,14 @@
 class Alarm {
     public:
         Alarm(uint32_t id, String name, unsigned long utc_time, unsigned long repeatTime,
-                uint16_t duration, const BulbId& bulbId,
+                uint16_t duration, uint16_t autoTurnOff, const BulbId& bulbId,
                 GroupStateField field, uint16_t startValue, uint16_t endValue, JsonObject init, uint8_t snoozes = 0):
             id(id),
             name(name),
             utc_time2000(utc_time),
             repeatTime(repeatTime),
             duration(duration),
+            autoTurnOff(autoTurnOff),
             bulbId(bulbId),
             field(field),
             startValue(startValue),
@@ -30,13 +31,14 @@ class Alarm {
                 initDoc.set(init);
             };
          Alarm(uint32_t id, String name, unsigned long utc_time, unsigned long repeatTime,
-                uint16_t duration, const BulbId& bulbId,
+                uint16_t duration, uint16_t autoTurnOff, const BulbId& bulbId,
                 GroupStateField field, uint16_t startValue, uint16_t endValue, JsonDocument init, uint8_t snoozes = 0):
             id(id),
             name(name),
             utc_time2000(utc_time),
             repeatTime(repeatTime),
             duration(duration),
+            autoTurnOff(autoTurnOff),
             bulbId(bulbId),
             field(field),
             startValue(startValue),
@@ -51,14 +53,16 @@ class Alarm {
         std::shared_ptr<Alarm> repeat();
         uint32_t getID();
         bool trigger(MiLightClient*& client);
-        void serialize(JsonObject &json);
+        void serialize(JsonObject &json, bool pretty);
         std::shared_ptr<Alarm> snooze(uint32_t newID, unsigned long currentTime, MiLightClient*& client, JsonObject& response);
     private:
+        Alarm(JsonObject& serial);
         uint32_t id;
         String name;
         unsigned long utc_time2000; //seconds since 2000
         unsigned long repeatTime;
         uint16_t duration;
+        uint16_t autoTurnOff;
         const BulbId& bulbId;
 
         GroupStateField field;

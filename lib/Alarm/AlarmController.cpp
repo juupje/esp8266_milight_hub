@@ -14,7 +14,9 @@ AlarmController::AlarmController(uint8 dat_pin, uint8 clk_pin, uint8 rst_pin, Se
     ntpHandler(ntpHandler),
     transitions(transitions),
     activeAlarm(nullptr),
-    transitionID(0)
+    transitionID(0),
+    autoTurnOffTime(0),
+    activatedBulbId()
 {}
 
 bool AlarmController::begin() {
@@ -26,14 +28,31 @@ bool AlarmController::begin() {
     unsigned long now = ntpHandler->requestTime();
     setRTCTime(now);
     //updateTimeFromRTC(); called by setRTCTime
-    alarmList.listAlarms();
     return true;
 }
 
 void AlarmController::loop() {
+    if(autoTurnOffTime > 0) {
+        if(getMillisTime() >= autoTurnOffTime) {
+            //There has been no interaction with the controller since the alarm was done
+            autoTurnOffTime = 0; //so we don't trigger this again
+            //turn off the light
+            if(activatedBulbId != NULL) {
+                const MiLightRemoteConfig* config = MiLightRemoteConfig::fromType(activatedBulbId->deviceType);
+                if(config) {
+                    milightClient->prepare(config, activatedBulbId->deviceId, activatedBulbId->groupId);
+                    milightClient->updateStatus(MiLightStatus::OFF);
+                }
+                activatedBulbId = NULL;
+            }
+        }
+    }
     if(activeAlarm) {
         if(activeAlarm->getAlarmTime()+activeAlarm->getDuration()<getMillisTime()) {
-            Serial.println("Alarm is done!");
+            if(activeAlarm->autoTurnOff != 0) {
+                autoTurnOffTime = getMillisTime()+activeAlarm->autoTurnOff;
+                activatedBulbId = &activeAlarm->bulbId;
+            }
             activeAlarm = nullptr;
             transitionID = 0;
         }
@@ -50,8 +69,6 @@ void AlarmController::loop() {
             transitions.clear();
             
             activeAlarm = alarmList.shift();
-            Serial.print("Alarm: ");
-            Serial.println(activeAlarm->getID());
             if(activeAlarm->trigger(milightClient)) {
                 transitionID = transitions.getTransitions()->data->id;
             } else {
@@ -135,6 +152,11 @@ bool AlarmController::createAlarm(BulbId& buldId, JsonObject args, JsonDocument&
     unsigned long repeatTime = 0;
     if(args.containsKey(FS(AlarmParams::REPEAT_TIME)))
         repeatTime = args[FS(AlarmParams::REPEAT_TIME)];
+
+    unsigned long autoTurnOff = 0;
+    if(args.containsKey(FS(AlarmParams::AUTO_TURN_OFF)))
+        autoTurnOff = args[FS(AlarmParams::AUTO_TURN_OFF)];
+
     uint32_t duration =  args[FS(TransitionParams::DURATION)];
 
     String name(args.containsKey(FS(AlarmParams::NAME)) ? args[FS(AlarmParams::NAME)].as<char*>() : "");
@@ -174,7 +196,7 @@ bool AlarmController::createAlarm(BulbId& buldId, JsonObject args, JsonDocument&
         case GroupStateField::KELVIN:
         case GroupStateField::COLOR_TEMP:
             {
-            Alarmptr alarm = std::make_shared<Alarm>(atomicID++, name, utc_time-c_Epoch32OfOriginYear, repeatTime, duration, buldId,
+            Alarmptr alarm = std::make_shared<Alarm>(atomicID++, name, utc_time-c_Epoch32OfOriginYear, repeatTime, duration, autoTurnOff, buldId,
                 field, startValue.as<uint16_t>(), endValue.as<uint16_t>(), init);
             alarmList.add(alarm);
             break;
@@ -212,9 +234,12 @@ unsigned long AlarmController::getMillisTimeEpoch() {
     return getMillisTime()+c_Epoch32OfOriginYear;
 }
 
+/*
+Note that this method still returns the time in seconds!
+*/
 unsigned long AlarmController::getMillisTime() {
     unsigned long delta = (millis()-millisStart)/1000;
-    if(delta>3600)//one hour
+    if(delta>RTC_RESYNC_INTERVAL)
         return updateTimeFromRTC();
     return delta+offset;
 }
@@ -232,6 +257,8 @@ bool AlarmController::snooze(JsonObject& response) {
         if(snoozedAlarm) {
             alarmList.add(snoozedAlarm);
             activeAlarm = nullptr;
+            transitionID = 0;
+            autoTurnOffTime = 0;
             return true;
         } else
             return false;
@@ -244,6 +271,8 @@ bool AlarmController::stop() {
     if(activeAlarm) {
         transitions.deleteTransition(transitionID);
         activeAlarm = nullptr;
+        transitionID = 0;
+        autoTurnOffTime = 0;
         return true;
     }
     return false;
@@ -252,7 +281,6 @@ bool AlarmController::stop() {
 // Epoch 1970 UTC time 
 bool AlarmController::setRTCTime(unsigned long time) {
     if(rtc.GetIsWriteProtected()) {
-        Serial.println("Disabling RTC write protection.");
         rtc.SetIsWriteProtected(false);
     }
     ListNode<Alarmptr>* curr = alarmList.getHead();
@@ -269,31 +297,19 @@ bool AlarmController::setRTCTime(unsigned long time) {
     snprintf_P(dateString,20,PSTR("%02u/%02u/%04u %02u:%02u:%02u"),
         dt.Month(), dt.Day(), dt.Year(),dt.Hour(), dt.Minute(), dt.Second());
     Serial.println(dateString);
-    Serial.print("Difference: ");
-    Serial.println(dt.TotalSeconds()-rtc.GetDateTime().TotalSeconds());
     if(!rtc.GetIsWriteProtected()) {
-        Serial.println("Enabling RTC write protection.");
         rtc.SetIsWriteProtected(true);
     }
     updateTimeFromRTC();
     return true;
 }
 
+void AlarmController::stopAutoTurnOff() {
+    autoTurnOffTime = 0;
+}
+
 AlarmController::AlarmList::AlarmList() {}
 
-void AlarmController::AlarmList::listAlarms() {
-    ListNode<Alarmptr>* curr = list.getHead();
-    while(curr) {
-        char text[30];
-        RtcDateTime dt(curr->data->getAlarmTime());
-        snprintf_P(text,30,PSTR("Alarm %d: %02u/%02u/%04u %02u:%02u:%02u"), curr->data->getID(),
-                dt.Month(), dt.Day(), dt.Year(),dt.Hour(), dt.Minute(), dt.Second());
-        Serial.println(text);
-        Serial.println(dt);
-        Serial.println(dt.TotalSeconds());
-        curr = curr->next;
-    }
-}
 void AlarmController::AlarmList::add(Alarmptr alarm) {
     if(alarm) {
         unsigned long time = alarm->getAlarmTime();

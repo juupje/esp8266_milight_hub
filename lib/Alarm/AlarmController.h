@@ -9,6 +9,9 @@
 #include <NTPHandler.h>
 #include <TransitionController.h>
 #pragma once
+
+#define AUTOTURNOFF 300 //5 minutes in seconds
+#define RTC_RESYNC_INTERVAL 3600 //one hour
 typedef std::shared_ptr<Alarm> Alarmptr;
 
 namespace AlarmParams {
@@ -18,6 +21,7 @@ namespace AlarmParams {
   static const char INIT[] PROGMEM = "init";
   static const char TIME[] PROGMEM = "time";
   static const char DATE[] PROGMEM = "date";
+  static const char AUTO_TURN_OFF[] PROGMEM = "auto_turn_off";
 }
 
 class AlarmController {
@@ -54,6 +58,7 @@ class AlarmController {
         unsigned long getMillisTimeEpoch(); //in Epoch time (since 1970, using millis())
         bool stop();
         bool snooze(JsonObject& response);
+        void stopAutoTurnOff();
 
     private:
         bool setRTCTime(unsigned long time);
@@ -72,4 +77,6 @@ class AlarmController {
         TransitionController& transitions;
         Alarmptr activeAlarm;
         size_t transitionID;
+        unsigned long autoTurnOffTime = 0;
+        const BulbId* activatedBulbId;
 };
