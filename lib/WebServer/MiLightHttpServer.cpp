@@ -7,6 +7,7 @@
 #include <string.h>
 #include <TokenIterator.h>
 #include <AboutHelper.h>
+#include <Presets.h>
 #include <index.html.gz.h>
 
 using namespace std::placeholders;
@@ -83,6 +84,11 @@ void MiLightHttpServer::begin() {
     .buildHandler("/alarms/:id")
     .on(HTTP_GET, std::bind(&MiLightHttpServer::handleGetAlarm, this, _1))
     .on(HTTP_DELETE, std::bind(&MiLightHttpServer::handleDeleteAlarm, this, _1));
+
+  server
+    .buildHandler("/presets")
+    .on(HTTP_GET, std::bind(&MiLightHttpServer::handleGetPresets, this, _1))
+    .on(HTTP_PUT, std::bind(&MiLightHttpServer::handlePutPresets, this, _1));
 
   server
     .buildHandler("/raw_commands/:type")
@@ -816,5 +822,27 @@ void MiLightHttpServer::handleSetTime(RequestContext& request) {
     request.response.json[F("success")] = false;
     request.response.setCode(500);
     request.response.json[F("error")] = "Could not update time";
+  }
+}
+
+void MiLightHttpServer::handleGetPresets(RequestContext& request) {
+  if(Presets::retrieve(server)) {
+    request.response.setCode(200);
+    request.response.json[F("success")] = true;
+  } else {
+    request.response.json[F("success")] = false;
+    request.response.setCode(500);
+    request.response.json[F("error")] = "Could not read presets";
+  }
+}
+
+void MiLightHttpServer::handlePutPresets(RequestContext& request) {
+  if(Presets::save(request.getJsonBody().as<JsonObject>())) {
+    request.response.setCode(200);
+    request.response.json[F("success")] = true;
+  } else {
+    request.response.json[F("success")] = false;
+    request.response.setCode(500);
+    request.response.json[F("error")] = "Could not save presets";
   }
 }
