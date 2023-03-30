@@ -746,12 +746,19 @@ void MiLightHttpServer::handleListAlarms(RequestContext& request) {
   alarms->stopAutoTurnOff();
 
   auto current = alarms->getAlarms();
-  JsonArray alarms = request.response.json.to<JsonObject>().createNestedArray(F("alarms"));
+  JsonObject response = request.response.json.to<JsonObject>();
+  JsonArray alarms_json = response.createNestedArray(F("alarms"));
 
   while (current != nullptr) {
-    JsonObject json = alarms.createNestedObject();
+    JsonObject json = alarms_json.createNestedObject();
     current->data->serialize(json, true);
     current = current->next;
+  }
+  std::vector<uint32_t> ids;
+  alarms->getStoredAlarms(ids);
+  JsonArray stored_alarms = response.createNestedArray(F("stored"));
+  for(auto it = ids.begin(); it != ids.end(); ++it) {
+    stored_alarms.add(*it);
   }
 }
 
@@ -768,7 +775,7 @@ void MiLightHttpServer::handleCreateAlarm(RequestContext& request) {
         return;
     }
     BulbId& bulbId = it->second;
-    if (alarms->createAlarm(bulbId, request.getJsonBody().as<JsonObject>(), request.response.json)) {
+    if (alarms->createAlarm(bulbId, body, request.response.json)) {
       request.response.json[F("success")] = true;
     } else {
       request.response.setCode(400);

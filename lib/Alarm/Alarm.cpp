@@ -4,6 +4,26 @@
 #include <map>
 #include <Settings.h>
 #include <Arduino.h>
+#include <ArduinoJson.h>
+
+Alarm::Alarm(const JsonObject& json) :
+    id(json[F("id")]),
+    name(json[F("name")].as<String>()),
+    alias(json[F("alias")].as<char*>()),
+    utc_time2000(json[F("next_time_utc2000")]),
+    repeatTime(json[F("repeat")]),   
+    duration(json[F("duration")]),
+    autoTurnOff(json[F("auto_turn_off")]),
+    bulbId{json["bulb"][GroupStateFieldNames::DEVICE_ID],
+            json["bulb"][GroupStateFieldNames::GROUP_ID],
+            MiLightRemoteTypeHelpers::remoteTypeFromString("rgb_cct")},
+    field(GroupStateFieldHelpers::getFieldByName(json[F("field")])),
+    startValue(json[F("start_value")]),
+    endValue(json[F("end_value")]),
+    initDoc(json[F("init")].as<JsonObject>())
+{
+    Serial.println("Decoded alarm from json");
+}
 
 bool Alarm::trigger(MiLightClient*& milightClient) {
     const MiLightRemoteConfig* config = MiLightRemoteConfig::fromType(bulbId.deviceType);
@@ -80,7 +100,7 @@ std::shared_ptr<Alarm> Alarm::snooze(uint32_t newID, unsigned long currentTime, 
         JsonObject obj = doc.to<JsonObject>();
         obj[GroupStateFieldHelpers::getFieldName(field)] = startValue;
         milightClient->update(obj);
-        return std::make_shared<Alarm>(newID, name, currentTime+SNOOZE_TIME, 0, duration, 0, bulbId, //don't pass over the autoturnoff!
+        return std::make_shared<Alarm>(newID, name, alias, currentTime+SNOOZE_TIME, 0, duration, 0, bulbId, //don't pass over the autoturnoff!
             field, startValue, endValue, initDoc, snoozes+1);
     } else {
         response[F("error")] = F("You already snoozed three times!");
@@ -90,7 +110,7 @@ std::shared_ptr<Alarm> Alarm::snooze(uint32_t newID, unsigned long currentTime, 
 
 std::shared_ptr<Alarm> Alarm::repeat() {
     if(repeatTime>0)
-        return std::make_shared<Alarm>(id, name, utc_time2000+repeatTime, repeatTime, duration, autoTurnOff,  bulbId,
+        return std::make_shared<Alarm>(id, name, alias, utc_time2000+repeatTime, repeatTime, duration, autoTurnOff,  bulbId,
             field, startValue, endValue, initDoc);
     return nullptr;
 }
@@ -98,6 +118,7 @@ std::shared_ptr<Alarm> Alarm::repeat() {
 void Alarm::serialize(JsonObject& json, bool pretty) {
     json[F("id")] = id;
     json[F("name")] = name;
+    json[F("alias")] = alias;
     if(pretty) {
         json[F("next_time")] = TimeFormatter::formatTimeEpoch2000(utc_time2000);
         json[F("repeat")] = TimeFormatter::formatTimeHMS(repeatTime);
@@ -110,7 +131,7 @@ void Alarm::serialize(JsonObject& json, bool pretty) {
     json[F("start_value")] = startValue;
     json[F("end_value")] = endValue;
     json[F("field")] = GroupStateFieldHelpers::getFieldName(field);
-    json[F("init")] = initDoc.to<JsonObject>();
+    json[F("init")] = initDoc.as<JsonObject>();
     JsonObject bulbParams = json.createNestedObject("bulb");
     bulbId.serialize(bulbParams);
 }

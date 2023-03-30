@@ -1,6 +1,7 @@
-#include<Arduino.h>
+#include <Arduino.h>
 #include <LinkedList.h>
 #include <Alarm.h>
+#include <AlarmPersistence.h>
 #include <RtcDS1302.h>
 #include <ThreeWire.h>
 #include <memory>
@@ -10,6 +11,7 @@
 #include <TransitionController.h>
 #pragma once
 
+//#define ALARM_DEBUG
 #define AUTOTURNOFF 300 //5 minutes in seconds
 #define RTC_RESYNC_INTERVAL 3600 //one hour
 typedef std::shared_ptr<Alarm> Alarmptr;
@@ -22,22 +24,25 @@ namespace AlarmParams {
   static const char TIME[] PROGMEM = "time";
   static const char DATE[] PROGMEM = "date";
   static const char AUTO_TURN_OFF[] PROGMEM = "auto_turn_off";
+  static const char ALIAS[] PROGMEM = "alias";
 }
 
 class AlarmController {
     class AlarmList {
         public:
-            AlarmList();
+            AlarmList(Settings& settings) : persistence(settings) {};
             void add(Alarmptr alarm);
             bool remove(uint32_t id);
             Alarmptr get(uint32_t id);
             size_t size() { return list.size();}
-            void listAlarms();
             ListNode<Alarmptr>* getHead();
             void clear();
             Alarmptr first();
             Alarmptr shift();
+            void loadPersistent(unsigned long time);
+            AlarmPersistence persistence;
         private:
+            void add(Alarmptr alarm, bool add_to_persistence);
             LinkedList<Alarmptr> list;
 
     };
@@ -51,6 +56,7 @@ class AlarmController {
         bool refreshTime();
         Alarmptr getAlarm(uint32_t id);
         ListNode<Alarmptr>* getAlarms();
+        void getStoredAlarms(std::vector<uint32_t> out);
         void loop();
         String getFormattedTime();
         unsigned long getTime(); //in Epoch time (since 1970)
@@ -66,11 +72,11 @@ class AlarmController {
         unsigned long millisStart;
         unsigned long offset; // in seconds
 
-        AlarmList alarmList;
         size_t atomicID;
         ThreeWire wire;
         RtcDS1302<ThreeWire> rtc;
         Settings& settings;
+        AlarmList alarmList;
         MiLightClient*& milightClient;
         NTPHandler*& ntpHandler;
 

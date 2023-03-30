@@ -4,19 +4,18 @@
 #include <memory>
 #include <MiLightClient.h>
 #include <TimeFormatter.h>
-#pragma once 
-
-#define ALARM_DEBUG
+#pragma once
 
 #define SNOOZE_TIME 300 //5 minutes
 
 class Alarm {
     public:
-        Alarm(uint32_t id, String name, unsigned long utc_time, unsigned long repeatTime,
+        Alarm(uint32_t id, String name, String bulbAlias, unsigned long utc_time, unsigned long repeatTime,
                 uint16_t duration, uint16_t autoTurnOff, const BulbId& bulbId,
                 GroupStateField field, uint16_t startValue, uint16_t endValue, JsonObject init, uint8_t snoozes = 0):
             id(id),
             name(name),
+            alias(bulbAlias),
             utc_time2000(utc_time),
             repeatTime(repeatTime),
             duration(duration),
@@ -30,11 +29,12 @@ class Alarm {
             {
                 initDoc.set(init);
             };
-         Alarm(uint32_t id, String name, unsigned long utc_time, unsigned long repeatTime,
+         Alarm(uint32_t id, String name, String bulbAlias, unsigned long utc_time, unsigned long repeatTime,
                 uint16_t duration, uint16_t autoTurnOff, const BulbId& bulbId,
                 GroupStateField field, uint16_t startValue, uint16_t endValue, JsonDocument init, uint8_t snoozes = 0):
             id(id),
             name(name),
+            alias(bulbAlias),
             utc_time2000(utc_time),
             repeatTime(repeatTime),
             duration(duration),
@@ -45,6 +45,7 @@ class Alarm {
             endValue(endValue),
             initDoc(init),
             snoozes(snoozes) {}
+        Alarm(const JsonObject& serial);
         unsigned long getAlarmTime();
         unsigned long getTimeUntilAlarm(unsigned long currentTime);
         unsigned long getTimeUntilAlarm(RtcDateTime time);
@@ -56,9 +57,9 @@ class Alarm {
         void serialize(JsonObject &json, bool pretty);
         std::shared_ptr<Alarm> snooze(uint32_t newID, unsigned long currentTime, MiLightClient*& client, JsonObject& response);
     private:
-        Alarm(JsonObject& serial);
         uint32_t id;
         String name;
+        String alias;
         unsigned long utc_time2000; //seconds since 2000
         unsigned long repeatTime;
         uint16_t duration;
@@ -70,4 +71,5 @@ class Alarm {
         DynamicJsonDocument initDoc;
         uint8_t snoozes;
     friend class AlarmController;
+    friend class AlarmPersistence;
 };

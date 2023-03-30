@@ -10,6 +10,7 @@ AlarmController::AlarmController(uint8 dat_pin, uint8 clk_pin, uint8 rst_pin, Se
     wire(dat_pin, clk_pin, rst_pin),
     rtc(wire),
     settings(settings),
+    alarmList(settings),
     milightClient(milightClient),
     ntpHandler(ntpHandler),
     transitions(transitions),
@@ -28,6 +29,9 @@ bool AlarmController::begin() {
     unsigned long now = ntpHandler->requestTime();
     setRTCTime(now);
     //updateTimeFromRTC(); called by setRTCTime
+
+    //load saved alarms
+    alarmList.loadPersistent(getMillisTime());
     return true;
 }
 
@@ -59,12 +63,14 @@ void AlarmController::loop() {
     }
     if(alarmList.size()>0) {
         if(alarmList.first()->getAlarmTime() <= getMillisTime()) {
+            #ifdef ALARM_DEBUG
             char buffer[20];
             RtcDateTime time = rtc.GetDateTime();
             snprintf_P(buffer,20,PSTR("%04u/%02u/%02u %02u:%02u:%02u"),
                     time.Year(), time.Month(), time.Day(), time.Hour(), time.Minute(), time.Second());
             Serial.print("Triggering alarm at time ");
             Serial.println(buffer);
+            #endif
             //Clear active transitions (possible running alarms) before starting the alarm
             transitions.clear();
             
@@ -106,25 +112,25 @@ uint8_t charsToInt(const char* pString){
 }
 
 bool AlarmController::createAlarm(BulbId& buldId, JsonObject args, JsonDocument& response) {
-    if(!args.containsKey(FS(TransitionParams::FIELD))
-        ||!args.containsKey(FS(TransitionParams::END_VALUE))
-        ||!args.containsKey(FS(TransitionParams::START_VALUE))
-        ||!args.containsKey(FS(TransitionParams::DURATION))) {
+    if(!args.containsKey(FS2(TransitionParams::FIELD))
+        ||!args.containsKey(FS2(TransitionParams::END_VALUE))
+        ||!args.containsKey(FS2(TransitionParams::START_VALUE))
+        ||!args.containsKey(FS2(TransitionParams::DURATION))) {
             response[F("error")] = F("Must specify transition parameters: field, end_value, start_value, duration");
             return false;
     }
     unsigned long utc_time = 0;
-    if(args.containsKey(FS(AlarmParams::UTC_TIME))) {
-        utc_time = args[FS(AlarmParams::UTC_TIME)];
-    } else if(args.containsKey(FS(AlarmParams::TIME))) {
-        const char* time = args[FS(AlarmParams::TIME)];
+    if(args.containsKey(FS2(AlarmParams::UTC_TIME))) {
+        utc_time = args[FS2(AlarmParams::UTC_TIME)];
+    } else if(args.containsKey(FS2(AlarmParams::TIME))) {
+        const char* time = args[FS2(AlarmParams::TIME)];
         if(time[0] == '+') {
             uint8_t hours = charsToInt(time);
             uint8_t minutes = charsToInt(time+4);
             unsigned long seconds = (hours*60+minutes)*60+charsToInt(time+7);
             utc_time = rtc.GetDateTime().Epoch32Time()+seconds;
-        } else if(args.containsKey(FS(AlarmParams::DATE))) {
-            const char* date = args[FS(AlarmParams::DATE)];
+        } else if(args.containsKey(FS2(AlarmParams::DATE))) {
+            const char* date = args[FS2(AlarmParams::DATE)];
             uint8_t yearFrom2000 = charsToInt(date+1);
             uint8_t month = charsToInt(date+5);
             uint8_t day = charsToInt(date+8);
@@ -150,18 +156,18 @@ bool AlarmController::createAlarm(BulbId& buldId, JsonObject args, JsonDocument&
         return false;
     }
     unsigned long repeatTime = 0;
-    if(args.containsKey(FS(AlarmParams::REPEAT_TIME)))
-        repeatTime = args[FS(AlarmParams::REPEAT_TIME)];
+    if(args.containsKey(FS2(AlarmParams::REPEAT_TIME)))
+        repeatTime = args[FS2(AlarmParams::REPEAT_TIME)];
 
     unsigned long autoTurnOff = 0;
-    if(args.containsKey(FS(AlarmParams::AUTO_TURN_OFF)))
-        autoTurnOff = args[FS(AlarmParams::AUTO_TURN_OFF)];
+    if(args.containsKey(FS2(AlarmParams::AUTO_TURN_OFF)))
+        autoTurnOff = args[FS2(AlarmParams::AUTO_TURN_OFF)];
 
-    uint32_t duration =  args[FS(TransitionParams::DURATION)];
+    uint32_t duration =  args[FS2(TransitionParams::DURATION)];
 
-    String name(args.containsKey(FS(AlarmParams::NAME)) ? args[FS(AlarmParams::NAME)].as<char*>() : "");
-    
-    JsonObject init = args[FS(AlarmParams::INIT)]; 
+    String name(args.containsKey(FS2(AlarmParams::NAME)) ? args[FS2(AlarmParams::NAME)].as<char*>() : "");
+    String alias(args[FS2(AlarmParams::ALIAS)].as<char*>());
+    JsonObject init = args[FS2(AlarmParams::INIT)]; 
     //Do some checks
     if(utc_time < rtc.GetDateTime().Epoch32Time()) {
         response[F("error")] = F("Alarm time is in the past.");
@@ -171,13 +177,13 @@ bool AlarmController::createAlarm(BulbId& buldId, JsonObject args, JsonDocument&
         response[F("error")] = F("Duration is longer than the repeat time.");
         return false;
     }
-    if(init.containsKey(FS(TransitionParams::DURATION)) || init.containsKey(FS(RequestKeys::TRANSITION))) {
+    if(init.containsKey(FS2(TransitionParams::DURATION)) || init.containsKey(FS2(RequestKeys::TRANSITION))) {
         response[F("error")] = F("Alarm init cannot be a transition.");
         return false;
     }
 
     //Verify that the field actually exists
-    const char* fieldName = args[FS(TransitionParams::FIELD)];
+    const char* fieldName = args[FS2(TransitionParams::FIELD)];
     GroupStateField field = GroupStateFieldHelpers::getFieldByName(fieldName);
     if (field == GroupStateField::UNKNOWN) {
         char errorMsg[30];
@@ -185,8 +191,8 @@ bool AlarmController::createAlarm(BulbId& buldId, JsonObject args, JsonDocument&
         response[F("error")] = errorMsg;
         return false;
     }
-    JsonVariant startValue = args[FS(TransitionParams::START_VALUE)];
-    JsonVariant endValue = args[FS(TransitionParams::END_VALUE)];
+    JsonVariant startValue = args[FS2(TransitionParams::START_VALUE)];
+    JsonVariant endValue = args[FS2(TransitionParams::END_VALUE)];
     
     switch(field) {
         case GroupStateField::HUE:
@@ -196,7 +202,7 @@ bool AlarmController::createAlarm(BulbId& buldId, JsonObject args, JsonDocument&
         case GroupStateField::KELVIN:
         case GroupStateField::COLOR_TEMP:
             {
-            Alarmptr alarm = std::make_shared<Alarm>(atomicID++, name, utc_time-c_Epoch32OfOriginYear, repeatTime, duration, autoTurnOff, buldId,
+            Alarmptr alarm = std::make_shared<Alarm>(atomicID++, name, alias, utc_time-c_Epoch32OfOriginYear, repeatTime, duration, autoTurnOff, buldId,
                 field, startValue.as<uint16_t>(), endValue.as<uint16_t>(), init);
             alarmList.add(alarm);
             break;
@@ -308,12 +314,56 @@ void AlarmController::stopAutoTurnOff() {
     autoTurnOffTime = 0;
 }
 
-AlarmController::AlarmList::AlarmList() {}
+void AlarmController::getStoredAlarms(std::vector<uint32_t> out) {
+    alarmList.persistence.getSummary(out);
+}
+
+void AlarmController::AlarmList::loadPersistent(unsigned long time) {
+    std::vector<uint32_t> ids;
+    persistence.getSummary(ids);
+    for(auto it = ids.begin(); it!=ids.end(); ++it) {
+        #ifdef ALARM_PERSISTENCE_DEBUG
+        Serial.print("Loading alarm ");
+        Serial.println(*it);
+        #endif
+        Alarmptr alarm = persistence.get(*it);
+        if(alarm == NULL) {
+            #ifdef ALARM_PERSISTENCE_DEBUG
+            Serial.println("Got null alarm");
+            #endif
+            persistence.remove(*it);
+            continue;
+        }
+        // check if the alarm time has passed
+        Serial.print(alarm->getAlarmTime());
+        Serial.print(" ");
+        Serial.println(time);
+        if(alarm->getAlarmTime() > time) {
+            add(alarm, false);
+        } else if(alarm->hasRepeat()) {
+            // if the alarm has a repeat time, we can repeat is as many times
+            //  as necessary until it is in the future again
+            uint16_t n_repeats = (time-alarm->getAlarmTime())/alarm->repeatTime;
+            alarm->utc_time2000 = n_repeats*alarm->repeatTime;
+            add(alarm, true); //overwrite the existing alarm with the new alarm time
+        } else {
+            persistence.remove(*it); //remove this alarm
+        }
+    }
+}
 
 void AlarmController::AlarmList::add(Alarmptr alarm) {
+    add(alarm, true);
+}
+
+void AlarmController::AlarmList::add(Alarmptr alarm, bool add_to_persistence) {
     if(alarm) {
         unsigned long time = alarm->getAlarmTime();
         ListNode<Alarmptr>* curr = list.getHead();
+        if(add_to_persistence)
+            // Store alarm in persistent storage
+            persistence.set(alarm);
+
         if(!curr) {
             // list is empty
             list.add(alarm);
@@ -342,6 +392,7 @@ bool AlarmController::AlarmList::remove(uint32_t id) {
     int index = 0;
     while(curr) {
         if(curr->data->getID() == id) {
+            persistence.remove(id);
             if(list.remove(index))
                 return true;
             return false;
@@ -358,6 +409,7 @@ ListNode<Alarmptr>* AlarmController::AlarmList::getHead() {
 
 void AlarmController::AlarmList::clear() {
     list.clear();
+    persistence.clear();
 }
 
 Alarmptr AlarmController::AlarmList::first() {
@@ -367,7 +419,10 @@ Alarmptr AlarmController::AlarmList::first() {
 }
 
 Alarmptr AlarmController::AlarmList::shift() {
-    if(list.size()>0)
-        return list.shift();
+    if(list.size()>0) {
+        Alarmptr alarm = list.shift();
+        persistence.remove(alarm->getID());
+        return alarm;
+    }
     return NULL;
 }
